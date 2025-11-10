@@ -7,6 +7,7 @@ import com.intellij.codeInspection.ProblemHighlightType;
 import com.intellij.codeInspection.ProblemsHolder;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.JavaElementVisitor;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiAnnotation;
@@ -41,6 +42,8 @@ import org.jetbrains.annotations.NotNull;
 
 public class LombokBuilderInspection extends AbstractBaseJavaLocalInspectionTool {
     public static final String QUICK_FIX_NAME = "Add all mandatory fields";
+    private static final String REGISTRY_KEY_TREAT_PRIMITIVES_AS_MANDATORY =
+            "lombok.builder.helper.treat.primitives.as.mandatory";
     private static final Logger LOG =
             Logger.getInstance("#com.dguner.lombokbuilderhelper.LombokBuilderInspection");
     private final LbiQuickFix myQuickFix = new LbiQuickFix();
@@ -136,13 +139,15 @@ public class LombokBuilderInspection extends AbstractBaseJavaLocalInspectionTool
                 Set.of("lombok.NonNull", "org.jetbrains.annotations.NotNull",
                         "javax.validation.constraints.NotNull");
         final String defaultBuilderValueAnnotation = "lombok.Builder.Default";
+        final boolean treatPrimitivesAsMandatory =
+                Registry.is(REGISTRY_KEY_TREAT_PRIMITIVES_AS_MANDATORY);
         return Arrays.stream(aClass.getAllFields()).filter(field -> {
             final PsiAnnotation[] annotations = field.getAnnotations();
             final PsiModifierList modifiers = field.getModifierList();
             final boolean isPrimitiveType = field.getType() instanceof PsiPrimitiveType;
             final boolean isStaticField =
                     modifiers != null && modifiers.hasModifierProperty(PsiModifier.STATIC);
-            return !isStaticField && (isPrimitiveType || Arrays.stream(annotations)
+            return !isStaticField && ((treatPrimitivesAsMandatory && isPrimitiveType) || Arrays.stream(annotations)
                     .anyMatch(annotation -> nonNullAnnotations.contains(
                             annotation.getQualifiedName()))) && Arrays.stream(annotations)
                     .noneMatch(annotation -> Objects.equals(annotation.getQualifiedName(),
