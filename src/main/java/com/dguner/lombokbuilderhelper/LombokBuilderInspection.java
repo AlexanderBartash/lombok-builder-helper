@@ -11,6 +11,7 @@ import com.intellij.openapi.util.registry.Registry;
 import com.intellij.psi.JavaElementVisitor;
 import com.intellij.psi.JavaPsiFacade;
 import com.intellij.psi.PsiAnnotation;
+import com.intellij.psi.PsiAnnotationMemberValue;
 import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiElementFactory;
@@ -44,6 +45,8 @@ public class LombokBuilderInspection extends AbstractBaseJavaLocalInspectionTool
     public static final String QUICK_FIX_NAME = "Add all mandatory fields";
     private static final String REGISTRY_KEY_TREAT_PRIMITIVES_AS_MANDATORY =
             "lombok.builder.helper.treat.primitives.as.mandatory";
+    private static final String REGISTRY_KEY_TREAT_JPA_NULLABLE_FALSE_AS_MANDATORY =
+            "lombok.builder.helper.treat.jpa.nullable.false.as.mandatory";
     private static final Logger LOG =
             Logger.getInstance("#com.dguner.lombokbuilderhelper.LombokBuilderInspection");
     private final LbiQuickFix myQuickFix = new LbiQuickFix();
@@ -134,6 +137,18 @@ public class LombokBuilderInspection extends AbstractBaseJavaLocalInspectionTool
                         annotation.getQualifiedName()));
     }
 
+    private boolean hasJpaNullableFalse(PsiField field) {
+        final Set<String> columnAnnotationNames =
+                Set.of("javax.persistence.Column", "jakarta.persistence.Column");
+        return Arrays.stream(field.getAnnotations())
+                .filter(annotation -> columnAnnotationNames.contains(annotation.getQualifiedName()))
+                .anyMatch(annotation -> {
+                    PsiAnnotationMemberValue nullableValue = annotation.findAttributeValue("nullable");
+                    // If nullable is explicitly set to false, treat as mandatory
+                    return nullableValue != null && "false".equals(nullableValue.getText());
+                });
+    }
+
     private List<String> getMandatoryFields(PsiClass aClass) {
         final Set<String> nonNullAnnotations =
                 Set.of("lombok.NonNull", "org.jetbrains.annotations.NotNull",
@@ -141,17 +156,25 @@ public class LombokBuilderInspection extends AbstractBaseJavaLocalInspectionTool
         final String defaultBuilderValueAnnotation = "lombok.Builder.Default";
         final boolean treatPrimitivesAsMandatory =
                 Registry.is(REGISTRY_KEY_TREAT_PRIMITIVES_AS_MANDATORY);
+        final boolean treatJpaNullableFalseAsMandatory =
+                Registry.is(REGISTRY_KEY_TREAT_JPA_NULLABLE_FALSE_AS_MANDATORY);
         return Arrays.stream(aClass.getAllFields()).filter(field -> {
             final PsiAnnotation[] annotations = field.getAnnotations();
             final PsiModifierList modifiers = field.getModifierList();
             final boolean isPrimitiveType = field.getType() instanceof PsiPrimitiveType;
             final boolean isStaticField =
                     modifiers != null && modifiers.hasModifierProperty(PsiModifier.STATIC);
-            return !isStaticField && ((treatPrimitivesAsMandatory && isPrimitiveType) || Arrays.stream(annotations)
+            final boolean hasNonNullAnnotation = Arrays.stream(annotations)
                     .anyMatch(annotation -> nonNullAnnotations.contains(
-                            annotation.getQualifiedName()))) && Arrays.stream(annotations)
-                    .noneMatch(annotation -> Objects.equals(annotation.getQualifiedName(),
+                            annotation.getQualifiedName()));
+            final boolean hasJpaNotNull = treatJpaNullableFalseAsMandatory && hasJpaNullableFalse(field);
+            final boolean isMandatory = (treatPrimitivesAsMandatory && isPrimitiveType)
+                    || hasNonNullAnnotation
+                    || hasJpaNotNull;
+            final boolean hasDefaultValue = Arrays.stream(annotations)
+                    .anyMatch(annotation -> Objects.equals(annotation.getQualifiedName(),
                             defaultBuilderValueAnnotation));
+            return !isStaticField && isMandatory && !hasDefaultValue;
         }).map(PsiField::getName).collect(Collectors.toList());
     }
 
