@@ -15,6 +15,7 @@
   <change-notes><![CDATA[
   <h2>Improvements</h2>
   <ul>
+  <li>Automatically excludes Hibernate/JPA auto-generated fields (@CreationTimestamp, @UpdateTimestamp, @UuidGenerator, @GeneratedValue, @Id, etc.) from mandatory field checking</li>
   <li>Registered registry keys in plugin.xml for better IDE integration</li>
   <li>Added support for JPA/Hibernate @Column(nullable=false) detection (configurable via registry key)</li>
   <li>Added registry key 'lombok.builder.helper.treat.jpa.nullable.false.as.mandatory' to control JPA nullable checking</li>
